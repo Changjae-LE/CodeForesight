@@ -60,11 +60,6 @@ CodeForesight was integrated into a Jenkins pipeline with stage-wise gates for:
 
 Each run generates archived JSON artifacts and a consolidated HTML report for review. :contentReference[oaicite:10]{index=10}
 
-## My Contribution
-
-- Dataset documentation and curation support
-- Power BI dashboard development
-- Reporting artifact generation and data plumbing for reports :contentReference[oaicite:11]{index=11}
 
 ## Goal
 
