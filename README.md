@@ -61,6 +61,14 @@ CodeForesight was integrated into a Jenkins pipeline with stage-wise gates for:
 Each run generates archived JSON artifacts and a consolidated HTML report for review.
 
 
-## Goal
+## Why It Matters
 
-CodeForesight aims to move vulnerability management from reactive detection to proactive, risk-oriented security analysis by combining detection, reasoning, and forecasting in one unified pipeline.
+Most security tools answer:
+
+→ Is there a vulnerability?
+
+CodeForesight goes further:
+
+→ What risks exist beyond known patterns, and what is likely to happen next?
+
+This enables a shift from reactive detection to proactive risk analysis.
