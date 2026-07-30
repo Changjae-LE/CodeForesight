@@ -1,0 +1,45 @@
+paths:
+  cvefixes_db: data/raw/CVEfixes.db
+  interim_dir: data/interim
+  processed_dir: data/processed
+  models_dir: models
+  artifacts_dir: artifacts
+  repos_dir: repos
+
+stage1:
+  language: null
+  min_code_chars: 40
+  max_code_chars: 30000
+  max_samples_per_class: null
+  classifier: logistic
+  threshold: 0.70
+  max_features: 50000
+
+stage2:
+  event_date: published_date
+  start_month: 2018-01
+  end_month: null
+  forecast_horizon_months: 3
+  lags: [1, 2, 3]
+  rolling_window: 3
+  min_repository_months: 24
+  min_repository_cves: 3
+  validation_months: 12
+  test_months: 12
+  ema_span: 6
+  classifier_c_grid: [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+  severity_alpha_grid: [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0]
+  selected_features:
+    - cvss_sum_current
+    - cve_count_current
+    - high_critical_count_current
+    - cvss_sum_lag_1
+    - cvss_sum_lag_2
+    - cvss_sum_lag_3
+    - cvss_sum_rolling_mean_3
+    - commit_count
+    - author_count
+    - files_changed
+    - code_churn
+    - repository_age_months
+  min_fix_score: null

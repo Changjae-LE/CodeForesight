@@ -1,0 +1,50 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+data/
+models/
+artifacts/
+patch-backups/
+
+*.joblib
+*.db
+
+# Local datasets and generated outputs
+data/
+models/
+artifacts/
+repos/
+patch-backups/
+
+# CVEfixes source data
+CVEfixes_v*.sql
+
+# Local utilities and generated archives
+sqlite3.exe
+*.zip
+
+# Logs
+*.log
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Model and database files
+*.joblib
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python package build metadata
+*.egg-info/
