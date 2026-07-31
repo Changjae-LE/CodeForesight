@@ -1,11 +1,63 @@
-# CodeForesight — Two-Stage ML Security Risk Analysis
+# CodeForesight — DevSecOps Detection and Future Risk Forecasting
 
-CodeForesight is a research-oriented two-stage security analysis framework:
+CodeForesight combines deterministic repository security scanning with an experimental future-risk forecast.
 
-1. **Stage 1:** detects known vulnerability-like code patterns from vulnerable/fixed CVE code.
-2. **Stage 2:** forecasts repository risk with a **Soft Hurdle model** designed for zero-heavy CVSS targets.
+1. **Stage 1:** scans the current repository with Semgrep, OSV-Scanner, Gitleaks, and Trivy.
+2. **Stage 2:** forecasts the next three-month CVSS sum with the validated Soft Hurdle model.
+3. **Optional Pattern Detector:** preserves the earlier CVEfixes vulnerable/fixed-code classifier as a research component, but it is no longer called Stage 1.
 
-Stage 2 separates the problem into:
+```text
+Source repository
+      ↓
+Stage 1: Semgrep + OSV-Scanner + Gitleaks + Trivy
+      ↓
+Normalized findings + CI security gate
+      ↓
+Stage 2: occurrence probability × conditional CVSS severity
+      ↓
+Combined current-risk and forecast report
+```
+
+> Confirmed Stage 1 findings may be used for a CI gate. Stage 2 is an experimental prioritization signal and must not be the sole reason to block deployment.
+
+## Stage 1 definition
+
+Stage 1 answers:
+
+> What security issues currently exist in the target repository?
+
+Scanner responsibilities:
+
+| Scanner | Responsibility |
+|---|---|
+| Semgrep | SAST and insecure source-code patterns |
+| OSV-Scanner | Known vulnerabilities in manifests and lockfiles |
+| Gitleaks | Hardcoded secrets and credentials |
+| Trivy | Filesystem dependency vulnerabilities and IaC misconfigurations |
+| Terraform CLI | Optional formatting, initialization, and validation checks |
+
+The implementation is adapted from the standalone `Stage1.zip` prototype. Its scanner separation, runner, normalizer, Terraform validation, and original output names are preserved. CodeForesight adds current CLI compatibility, deterministic fingerprints, secret-safe normalization, scanner status reporting, and a CI policy gate.
+
+Stage 1 outputs:
+
+```text
+artifacts/stage1/
+├── raw/
+│   ├── semgrep.json
+│   ├── osv-scanner.json
+│   ├── gitleaks.json
+│   ├── trivy.json
+│   └── terraform.json          # only when requested
+├── logs/
+├── stage1_findings.json        # original prototype-compatible list
+├── stage1_summary.json         # original prototype-compatible summary
+├── stage1_report.json          # full CodeForesight report and policy result
+└── stage1_summary.md
+```
+
+## Validated Stage 2 result
+
+Stage 2 uses:
 
 ```text
 Occurrence model: Logistic Regression
@@ -13,25 +65,13 @@ Severity model: Positive-only log1p Ridge Regression
 Final prediction: occurrence probability × conditional CVSS severity
 ```
 
-The final Stage 2 prediction column is:
+Final prediction column:
 
 ```text
 expected_future_cvss_sum
 ```
 
-> Stage 1 findings are review signals, not confirmed vulnerabilities. Stage 2 is an experimental prioritization signal and must not be the sole reason to block a deployment.
-
-## Validated Stage 2 result
-
-The final Soft Hurdle experiment used a chronological split:
-
-```text
-Train:      3,776 rows, through 2022-04
-Validation:   959 rows, 2022-05 through 2023-04
-Test:         945 rows, 2023-05 through 2024-04
-```
-
-Test performance:
+Chronological test performance:
 
 ```text
 Soft Hurdle MAE:                 10.6918
@@ -42,94 +82,143 @@ Classifier PR-AUC:                0.4895
 Classifier ROC-AUC:               0.7073
 ```
 
-The zero baseline retained a lower overall MAE because approximately 75.7% of test targets were zero. The Soft Hurdle model achieved lower RMSE, higher R², and lower positive-target MAE, making it the final experimental model for CodeForesight.
-
-## Data design
-
-Each Stage 2 row represents:
-
-```text
-repository r at month t
-inputs: vulnerability history and Git activity available through t
-target: CVSS sum disclosed during t+1, t+2, and t+3
-```
-
-The target excludes the current month.
+The zero baseline retained a lower overall MAE because approximately 75.7% of test targets were zero. The Soft Hurdle model achieved lower RMSE, higher R², and lower positive-target MAE.
 
 ## Project structure
 
 ```text
-CodeForesight-Soft-Hurdle-Final/
-├── src/codeforesight/
-│   ├── data/
-│   │   ├── cvefixes.py
-│   │   └── git_metrics.py
-│   ├── stage1/
-│   │   ├── model.py
-│   │   └── scan.py
-│   ├── stage2/
-│   │   ├── features.py
-│   │   ├── model.py          # final Soft Hurdle training
-│   │   ├── forecast.py       # final Soft Hurdle forecast
-│   │   ├── ridge_model.py    # legacy Ridge experiment
-│   │   └── ridge_forecast.py # legacy Ridge forecast
-│   ├── reporting/
-│   │   └── aggregate.py
-│   └── cli.py
-├── scripts/generate_demo_data.py
-├── tests/
-├── Jenkinsfile
-└── config.example.yaml
+src/codeforesight/
+├── data/
+├── stage1/
+│   ├── stage1_runner.py
+│   ├── normalizer.py
+│   ├── policy.py
+│   ├── schema.py
+│   └── scanners/
+│       ├── sast_scanner.py
+│       ├── sca_scanner.py
+│       ├── secret_scanner.py
+│       ├── iac_container_scanner.py
+│       └── terraform_scanner.py
+├── pattern_detector/
+│   ├── model.py
+│   └── scan.py
+├── stage2/
+│   ├── features.py
+│   ├── model.py
+│   ├── forecast.py
+│   ├── ridge_model.py
+│   └── ridge_forecast.py
+├── reporting/
+└── cli.py
 ```
 
-## 1. Installation
-
-### Windows PowerShell
+## Installation
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -e ".[dev]"
-codeforesight --help
+python -m pip install -e ".[dev]"
+pytest -q
 ```
 
-Confirm Git is available:
+The four external Stage 1 scanners must also be available in `PATH`:
 
 ```powershell
-git --version
+semgrep --version
+osv-scanner --version
+gitleaks version
+trivy --version
 ```
 
-## 2. Prepare CVEfixes
+Terraform is optional:
 
-Place the CVEfixes SQLite database at:
+```powershell
+terraform version
+```
+
+## Run Stage 1 without installed tools
+
+This checks the integrated pipeline and output structure only. It is not a real security scan.
+
+```powershell
+codeforesight scan-stage1 `
+  --repository . `
+  --output-dir artifacts/stage1 `
+  --allow-missing-tools `
+  --no-fail-on-secrets `
+  --fail-severities ""
+```
+
+## Run the real Stage 1 security gate
+
+```powershell
+codeforesight scan-stage1 `
+  --repository . `
+  --output-dir artifacts/stage1 `
+  --tools semgrep,osv-scanner,gitleaks,trivy `
+  --fail-severities CRITICAL,HIGH `
+  --semgrep-config auto `
+  --gitleaks-mode dir
+```
+
+To include the optional Terraform CLI validation:
+
+```powershell
+codeforesight scan-stage1 `
+  --repository C:\path\to\terraform-repository `
+  --output-dir artifacts/stage1 `
+  --tools semgrep,osv-scanner,gitleaks,trivy,terraform `
+  --fail-severities CRITICAL,HIGH
+```
+
+Exit codes:
 
 ```text
-data/raw/CVEfixes.db
+0 = Stage 1 passed
+2 = security policy violation
+3 = scanner missing or scanner execution failure
 ```
 
-Inspect the database:
+Default gate:
+
+```text
+CRITICAL finding → fail
+HIGH finding     → fail
+Secret finding   → fail
+Scanner error    → fail
+Scanner missing  → fail
+```
+
+## Optional CVEfixes Pattern Detector
+
+The former ML Stage 1 remains available under a clearer name.
 
 ```powershell
-codeforesight inspect-db `
+codeforesight build-pattern-detector `
   --db data/raw/CVEfixes.db `
-  --output artifacts/cvefixes_schema.json
+  --output data/processed/pattern_detector_samples.csv
+
+codeforesight train-pattern-detector `
+  --dataset data/processed/pattern_detector_samples.csv `
+  --model-out models/pattern_detector.joblib `
+  --artifacts-dir artifacts/pattern_detector
+
+codeforesight scan-pattern-detector `
+  --repository C:\path\to\target-repository `
+  --model models/pattern_detector.joblib `
+  --output artifacts/pattern_detector/scan.json
 ```
 
-## 3. Extract CVE events
+## Stage 2 data preparation and training
 
 ```powershell
 codeforesight extract-events `
   --db data/raw/CVEfixes.db `
   --output data/interim/vulnerability_events.csv `
   --repositories-output data/interim/repositories.csv
-```
 
-## 4. Collect complete Git history
-
-The collector now uses the **committer date** rather than the author date to reduce malformed future-date problems.
-
-```powershell
 codeforesight collect-git `
   --repositories data/interim/repositories.csv `
   --repos-dir repos `
@@ -138,13 +227,7 @@ codeforesight collect-git `
   --since 2018-01-01 `
   --until 2024-07-31 `
   --max-repos 100
-```
 
-## 5. Build the Stage 2 panel
-
-Repository URLs are normalized case-insensitively, duplicate repository-month rows are removed, and the panel is capped at the latest vulnerability-event month unless `--end-month` is supplied.
-
-```powershell
 codeforesight build-stage2 `
   --events data/interim/vulnerability_events.csv `
   --git-metrics data/interim/git_monthly_metrics.csv `
@@ -154,31 +237,9 @@ codeforesight build-stage2 `
   --rolling-window 3 `
   --min-months 24 `
   --min-cves 3 `
-  --event-date published_date `
   --start-month 2018-01 `
   --end-month 2024-07
-```
 
-The validated feature set is:
-
-```text
-cvss_sum_current
-cve_count_current
-high_critical_count_current
-cvss_sum_lag_1
-cvss_sum_lag_2
-cvss_sum_lag_3
-cvss_sum_rolling_mean_3
-commit_count
-author_count
-files_changed
-code_churn
-repository_age_months
-```
-
-## 6. Train the final Soft Hurdle model
-
-```powershell
 codeforesight train-stage2 `
   --dataset data/processed/stage2_panel.csv `
   --model-out models/codeforesight_soft_hurdle.joblib `
@@ -188,125 +249,44 @@ codeforesight train-stage2 `
   --classifier-c-values 0.001,0.01,0.1,1,10,100,1000 `
   --severity-alphas 0.01,0.1,1,10,100,1000,10000,100000 `
   --ema-span 6
-```
 
-Training behavior:
-
-- selects Logistic Regression `C` with time-series PR-AUC;
-- selects positive-only Ridge `alpha` with time-series positive-target MAE;
-- chooses a diagnostic classification threshold on validation data;
-- evaluates the final Soft Hurdle prediction on the chronological test period;
-- compares against zero, previous-horizon, global-mean, repository-mean, and EMA baselines;
-- retrains deployment models on all labeled rows.
-
-Artifacts:
-
-```text
-artifacts/stage2/
-├── metrics.json
-├── model_comparison.csv
-├── classifier_cv_results.csv
-├── severity_cv_results.csv
-├── diagnostic_threshold_results.csv
-├── occurrence_coefficients.csv
-├── severity_coefficients.csv
-├── validation_predictions.csv
-└── test_predictions.csv
-```
-
-## 7. Forecast the latest period
-
-```powershell
 codeforesight forecast-stage2 `
   --dataset data/processed/stage2_panel.csv `
   --model models/codeforesight_soft_hurdle.joblib `
   --output artifacts/stage2/latest_forecasts.csv
 ```
 
-Key output columns:
-
-```text
-occurrence_probability
-conditional_cvss_if_occurs
-expected_future_cvss_sum
-forecast_risk_score
-trend
-risk_level
-```
-
-Interpretation:
-
-```text
-occurrence_probability
-= probability that future three-month CVSS sum is greater than zero
-
-conditional_cvss_if_occurs
-= expected CVSS sum when an event occurs
-
-expected_future_cvss_sum
-= occurrence_probability × conditional_cvss_if_occurs
-```
-
-The diagnostic Yes/No occurrence field is for interpretation only. It is not used to calculate the final Soft Hurdle prediction.
-
-## 8. Stage 1
-
-Build samples:
-
-```powershell
-codeforesight build-stage1 `
-  --db data/raw/CVEfixes.db `
-  --output data/processed/stage1_samples.csv `
-  --language C
-```
-
-Train:
-
-```powershell
-codeforesight train-stage1 `
-  --dataset data/processed/stage1_samples.csv `
-  --model-out models/stage1.joblib `
-  --artifacts-dir artifacts/stage1 `
-  --classifier logistic `
-  --threshold 0.70
-```
-
-Scan:
-
-```powershell
-codeforesight scan-stage1 `
-  --repository C:\path\to\target-repository `
-  --model models/stage1.joblib `
-  --output artifacts/stage1/scan.json
-```
-
-## 9. Aggregate both stages
+## Aggregate Stage 1 and Stage 2
 
 ```powershell
 codeforesight aggregate `
-  --stage1-json artifacts/stage1/scan.json `
+  --stage1-json artifacts/stage1/stage1_report.json `
   --stage2-csv artifacts/stage2/latest_forecasts.csv `
   --repo-url https://github.com/owner/project `
   --output-json artifacts/final_report.json `
   --output-html artifacts/final_report.html
 ```
 
-## 10. Demo and tests
+## CI/CD
 
-```powershell
-make demo
-pytest -q
+The included Jenkinsfile runs:
+
+```text
+Checkout
+→ Python install
+→ Unit tests
+→ scanner availability check
+→ Stage 1 security scan and gate
+→ optional research dataset build
+→ optional Pattern Detector and Stage 2 training
+→ artifact archiving
 ```
-
-On Windows without `make`, run the commands from the `Makefile` manually.
 
 ## Limitations
 
-1. CVE publication date is not vulnerability-introduction date.
-2. Repositories with disclosed CVEs are not representative of all software.
-3. Repository-month targets contain many zeros.
-4. CVSS measures severity, not exploitation probability.
-5. Git activity correlates with project size and popularity.
-6. The final model is experimentally validated, not production-certified.
-7. The diagnostic threshold produced high recall but many false positives in the test period.
-8. Stage 2 should be used for ranking and preventive review, not autonomous deployment blocking.
+1. Scanner findings can include false positives and require review.
+2. `semgrep --config auto` depends on externally maintained rules.
+3. OSV and Trivy depend on vulnerability databases and supported manifests.
+4. Gitleaks directory mode does not inspect full Git history; use `--gitleaks-mode git` when history scanning is required.
+5. The Stage 1 current-risk score is a bounded reporting heuristic, not a calibrated probability.
+6. Stage 2 remains an experimental ranking and prioritization model.

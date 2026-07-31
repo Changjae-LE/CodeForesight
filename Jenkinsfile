@@ -12,7 +12,7 @@ pipeline {
             steps { checkout scm }
         }
 
-        stage('Install') {
+        stage('Install Python') {
             steps {
                 sh '''
                     python3 -m venv "$VENV"
@@ -32,7 +32,44 @@ pipeline {
             }
         }
 
-        stage('Build Datasets') {
+        stage('Check Stage 1 Tools') {
+            steps {
+                sh '''
+                    command -v semgrep
+                    command -v osv-scanner
+                    command -v gitleaks
+                    command -v trivy
+                    command -v terraform
+
+                    semgrep --version
+                    osv-scanner --version
+                    gitleaks version
+                    trivy --version
+                    terraform --version
+                '''
+            }
+        }
+
+        stage('Stage 1 Security Scan') {
+            steps {
+                sh '''
+                    . "$VENV/bin/activate"
+                    mkdir -p artifacts/stage1
+
+                    # scan-stage1 always writes raw and normalized reports first.
+                    # It exits 2 for policy violations and 3 for scanner failures.
+                    codeforesight scan-stage1 \
+                      --repository . \
+                      --output-dir artifacts/stage1 \
+                      --tools semgrep,osv-scanner,gitleaks,trivy,terraform \
+                      --fail-severities CRITICAL,HIGH \
+                      --semgrep-config auto \
+                      --gitleaks-mode git
+                '''
+            }
+        }
+
+        stage('Build Research Datasets') {
             when { expression { return fileExists(env.CVEFIXES_DB) } }
             steps {
                 sh '''
@@ -44,9 +81,10 @@ pipeline {
                       --output data/interim/vulnerability_events.csv \
                       --repositories-output data/interim/repositories.csv
 
-                    codeforesight build-stage1 \
+                    # Optional research baseline, not the production Stage 1 gate.
+                    codeforesight build-pattern-detector \
                       --db "$CVEFIXES_DB" \
-                      --output data/processed/stage1_samples.csv
+                      --output data/processed/pattern_detector_samples.csv
 
                     # Create this file in a scheduled data-collection job.
                     test -f data/interim/git_monthly_metrics.csv
@@ -59,10 +97,10 @@ pipeline {
             }
         }
 
-        stage('Train Models') {
+        stage('Train Research Models') {
             when {
                 allOf {
-                    expression { return fileExists('data/processed/stage1_samples.csv') }
+                    expression { return fileExists('data/processed/pattern_detector_samples.csv') }
                     expression { return fileExists('data/processed/stage2_panel.csv') }
                 }
             }
@@ -70,10 +108,10 @@ pipeline {
                 sh '''
                     . "$VENV/bin/activate"
 
-                    codeforesight train-stage1 \
-                      --dataset data/processed/stage1_samples.csv \
-                      --model-out models/stage1.joblib \
-                      --artifacts-dir artifacts/stage1
+                    codeforesight train-pattern-detector \
+                      --dataset data/processed/pattern_detector_samples.csv \
+                      --model-out models/pattern_detector.joblib \
+                      --artifacts-dir artifacts/pattern_detector
 
                     codeforesight train-stage2 \
                       --dataset data/processed/stage2_panel.csv \
