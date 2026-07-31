@@ -361,7 +361,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan = sub.add_parser(
         "scan-stage1",
         help=(
-            "Run Semgrep, OSV-Scanner, Gitleaks, and Trivy; normalize findings; and evaluate the CI gate"
+            "Run Semgrep, OSV-Scanner, Gitleaks, Trivy, and Terraform; normalize findings; and evaluate the CI gate"
         ),
     )
     scan.add_argument(

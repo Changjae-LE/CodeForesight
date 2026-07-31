@@ -108,7 +108,7 @@ def run_stage1(
     fail_on_secrets: bool = True,
     allow_missing_tools: bool = False,
     semgrep_config: str = "auto",
-    gitleaks_mode: str = "dir",
+    gitleaks_mode: str = "git",
     semgrep_executable: str = "semgrep",
     osv_executable: str = "osv-scanner",
     gitleaks_executable: str = "gitleaks",

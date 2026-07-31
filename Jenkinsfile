@@ -39,11 +39,13 @@ pipeline {
                     command -v osv-scanner
                     command -v gitleaks
                     command -v trivy
+                    command -v terraform
 
                     semgrep --version
                     osv-scanner --version
                     gitleaks version
                     trivy --version
+                    terraform --version
                 '''
             }
         }
@@ -59,10 +61,10 @@ pipeline {
                     codeforesight scan-stage1 \
                       --repository . \
                       --output-dir artifacts/stage1 \
-                      --tools semgrep,osv-scanner,gitleaks,trivy \
+                      --tools semgrep,osv-scanner,gitleaks,trivy,terraform \
                       --fail-severities CRITICAL,HIGH \
                       --semgrep-config auto \
-                      --gitleaks-mode dir
+                      --gitleaks-mode git
                 '''
             }
         }
