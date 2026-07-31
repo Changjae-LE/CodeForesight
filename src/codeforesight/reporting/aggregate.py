@@ -83,11 +83,10 @@ def aggregate_results(
             .iloc[0]
         )
 
-    current = float(
-        stage1[
-            "current_risk_score"
-        ]
-    )
+    current = float(stage1.get("current_risk_score", 0.0))
+    stage1_summary = stage1.get("summary") or {}
+    finding_count = int(stage1.get("finding_count", stage1_summary.get("total", 0)))
+    policy = stage1.get("policy") or {"passed": True, "violation_count": 0}
     forecast = float(
         row[
             "forecast_risk_score"
@@ -106,16 +105,12 @@ def aggregate_results(
         ),
         "repo_url": row["repo_url"],
         "current_analysis": {
-            "risk_score": round(
-                current,
-                2,
-            ),
-            "finding_count": stage1[
-                "finding_count"
-            ],
-            "chunks_scanned": stage1[
-                "chunks_scanned"
-            ],
+            "risk_score": round(current, 2),
+            "finding_count": finding_count,
+            "counts": stage1_summary,
+            "policy_passed": bool(policy.get("passed", True)),
+            "gate_violation_count": int(policy.get("violation_count", 0)),
+            "tool_runs": stage1.get("tool_runs", []),
         },
         "forecast": {
             "model": row["model"],
@@ -209,8 +204,8 @@ small {{
 <div class="card">
 <h2>Current risk</h2>
 <div class="score">{current:.1f}/100</div>
-<p>{int(stage1["finding_count"])} review signals from
-{int(stage1["chunks_scanned"])} code windows.</p>
+<p>{finding_count} normalized security findings.
+Stage 1 policy: {'PASS' if policy.get('passed', True) else 'FAIL'}.</p>
 </div>
 <div class="card">
 <h2>Forecast risk</h2>

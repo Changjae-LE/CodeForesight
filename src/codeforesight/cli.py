@@ -14,11 +14,14 @@ from codeforesight.data.git_metrics import (
 from codeforesight.reporting.aggregate import (
     aggregate_results,
 )
-from codeforesight.stage1.model import (
-    train_stage1,
+from codeforesight.pattern_detector.model import (
+    train_stage1 as train_pattern_detector,
 )
-from codeforesight.stage1.scan import (
-    scan_repository,
+from codeforesight.pattern_detector.scan import (
+    scan_repository as scan_pattern_detector,
+)
+from codeforesight.stage1.stage1_runner import (
+    run_stage1,
 )
 from codeforesight.stage2.features import (
     build_stage2_panel,
@@ -108,10 +111,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     stage1_data = sub.add_parser(
-        "build-stage1",
+        "build-pattern-detector",
         help=(
-            "Build Stage 1 vulnerable/"
-            "fixed code samples"
+            "Build vulnerable/fixed code samples for the optional CVEfixes pattern detector"
         ),
     )
     stage1_data.add_argument(
@@ -244,10 +246,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     train1 = sub.add_parser(
-        "train-stage1",
+        "train-pattern-detector",
         help=(
-            "Train Stage 1 code "
-            "classifier"
+            "Train the optional CVEfixes vulnerable-code pattern detector"
         ),
     )
     train1.add_argument(
@@ -360,31 +361,59 @@ def build_parser() -> argparse.ArgumentParser:
     scan = sub.add_parser(
         "scan-stage1",
         help=(
-            "Scan source repository "
-            "with Stage 1"
+            "Run Semgrep, OSV-Scanner, Gitleaks, and Trivy; normalize findings; and evaluate the CI gate"
         ),
     )
     scan.add_argument(
         "--repository",
-        required=True,
+        default=".",
     )
     scan.add_argument(
-        "--model",
-        required=True,
+        "--output-dir",
+        default="artifacts/stage1",
     )
     scan.add_argument(
-        "--output",
-        required=True,
+        "--tools",
+        default="semgrep,osv-scanner,gitleaks,trivy,terraform",
+        help="Comma-separated scanner list",
     )
     scan.add_argument(
-        "--threshold",
-        type=float,
+        "--fail-severities",
+        default="CRITICAL,HIGH",
     )
     scan.add_argument(
-        "--max-findings",
-        type=int,
-        default=100,
+        "--no-fail-on-secrets",
+        action="store_true",
+        help="Do not fail the gate solely because a secret was detected",
     )
+    scan.add_argument(
+        "--allow-missing-tools",
+        action="store_true",
+    )
+    scan.add_argument(
+        "--semgrep-config",
+        default="auto",
+    )
+    scan.add_argument(
+        "--gitleaks-mode",
+        choices=["dir", "git"],
+        default="git",
+    )
+    scan.add_argument("--semgrep-executable", default="semgrep")
+    scan.add_argument("--osv-executable", default="osv-scanner")
+    scan.add_argument("--gitleaks-executable", default="gitleaks")
+    scan.add_argument("--trivy-executable", default="trivy")
+    scan.add_argument("--terraform-executable", default="terraform")
+
+    pattern_scan = sub.add_parser(
+        "scan-pattern-detector",
+        help="Scan source with the optional CVEfixes ML pattern detector",
+    )
+    pattern_scan.add_argument("--repository", required=True)
+    pattern_scan.add_argument("--model", required=True)
+    pattern_scan.add_argument("--output", required=True)
+    pattern_scan.add_argument("--threshold", type=float)
+    pattern_scan.add_argument("--max-findings", type=int, default=100)
 
     aggregate = sub.add_parser(
         "aggregate",
@@ -458,7 +487,7 @@ def main() -> None:
         )
 
     elif args.command == (
-        "build-stage1"
+        "build-pattern-detector"
     ):
         frame = build_stage1_samples(
             args.db,
@@ -479,7 +508,7 @@ def main() -> None:
         )
         print(
             f"Wrote {len(frame):,} "
-            "Stage 1 samples to "
+            "pattern-detector samples to "
             f"{args.output}"
         )
 
@@ -546,9 +575,9 @@ def main() -> None:
         )
 
     elif args.command == (
-        "train-stage1"
+        "train-pattern-detector"
     ):
-        metrics = train_stage1(
+        metrics = train_pattern_detector(
             args.dataset,
             args.model_out,
             args.artifacts_dir,
@@ -627,23 +656,52 @@ def main() -> None:
     elif args.command == (
         "scan-stage1"
     ):
-        result = scan_repository(
+        result = run_stage1(
+            args.repository,
+            args.output_dir,
+            tools=_string_list(args.tools),
+            fail_severities={value.upper() for value in _string_list(args.fail_severities)},
+            fail_on_secrets=not args.no_fail_on_secrets,
+            allow_missing_tools=args.allow_missing_tools,
+            semgrep_config=args.semgrep_config,
+            gitleaks_mode=args.gitleaks_mode,
+            semgrep_executable=args.semgrep_executable,
+            osv_executable=args.osv_executable,
+            gitleaks_executable=args.gitleaks_executable,
+            trivy_executable=args.trivy_executable,
+            terraform_executable=args.terraform_executable,
+        )
+        print(json.dumps({
+            "report": str(args.output_dir) + "/stage1_report.json",
+            "summary": result["summary"],
+            "current_risk_score": result["current_risk_score"],
+            "policy": result["policy"],
+        }, indent=2))
+        tool_runs = result.get("tool_runs", [])
+        scanner_failed = any(
+            run.get("status") == "error"
+            or (
+                run.get("status") == "missing"
+                and not args.allow_missing_tools
+            )
+            for run in tool_runs
+        )
+        if scanner_failed:
+            raise SystemExit(3)
+        if not result["policy"]["passed"]:
+            raise SystemExit(2)
+
+    elif args.command == (
+        "scan-pattern-detector"
+    ):
+        result = scan_pattern_detector(
             args.repository,
             args.model,
             args.output,
-            threshold=(
-                args.threshold
-            ),
-            max_findings=(
-                args.max_findings
-            ),
+            threshold=args.threshold,
+            max_findings=args.max_findings,
         )
-        print(
-            json.dumps(
-                result,
-                indent=2,
-            )
-        )
+        print(json.dumps(result, indent=2))
 
     elif args.command == "aggregate":
         result = aggregate_results(

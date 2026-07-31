@@ -2,7 +2,8 @@
 
 ## 최종 모델 구조
 
-- Stage 1: CVEfixes 수정 전/후 함수 코드를 이용한 취약점 패턴 탐지
+- Stage 1: Semgrep, OSV-Scanner, Gitleaks, Trivy 기반 현재 저장소 보안 탐지 및 CI gate
+- Optional Pattern Detector: CVEfixes 수정 전/후 함수 코드 기반 연구용 패턴 탐지
 - Stage 2: zero-heavy CVSS target을 위한 Soft Hurdle 예측
 
 Stage 2는 두 모델을 결합합니다.
@@ -51,7 +52,35 @@ py -m venv .venv
 pip install -e ".[dev]"
 ```
 
-### 2. CVE 이벤트 추출
+
+### 2. Stage 1 현재 보안 스캔
+
+구조 확인용 실행:
+
+```powershell
+codeforesight scan-stage1 `
+  --repository . `
+  --output-dir artifacts/stage1 `
+  --allow-missing-tools `
+  --no-fail-on-secrets `
+  --fail-severities ""
+```
+
+실제 보안 gate 실행:
+
+```powershell
+codeforesight scan-stage1 `
+  --repository . `
+  --output-dir artifacts/stage1 `
+  --tools semgrep,osv-scanner,gitleaks,trivy `
+  --fail-severities CRITICAL,HIGH `
+  --semgrep-config auto `
+  --gitleaks-mode dir
+```
+
+주요 결과는 `artifacts/stage1/stage1_report.json`이며, 원래 Stage1 프로토타입과 호환되는 `stage1_findings.json`과 `stage1_summary.json`도 생성합니다.
+
+### 3. CVE 이벤트 추출
 
 ```powershell
 codeforesight extract-events `
@@ -60,7 +89,7 @@ codeforesight extract-events `
   --repositories-output data/interim/repositories.csv
 ```
 
-### 3. Git 월간 지표 수집
+### 4. Git 월간 지표 수집
 
 ```powershell
 codeforesight collect-git `
@@ -75,7 +104,7 @@ codeforesight collect-git `
 
 Git 수집은 비정상 미래 author date 문제를 줄이기 위해 committer date를 사용합니다.
 
-### 4. Stage 2 panel 생성
+### 5. Stage 2 panel 생성
 
 ```powershell
 codeforesight build-stage2 `
@@ -93,7 +122,7 @@ codeforesight build-stage2 `
 
 `--end-month`를 생략하면 CVE 이벤트의 최신 월을 사용하여 2085년과 같은 비정상 미래 월이 panel에 포함되는 것을 방지합니다.
 
-### 5. 최종 Soft Hurdle 학습
+### 6. 최종 Soft Hurdle 학습
 
 ```powershell
 codeforesight train-stage2 `
@@ -107,7 +136,7 @@ codeforesight train-stage2 `
   --ema-span 6
 ```
 
-### 6. 최신 예측
+### 7. 최신 예측
 
 ```powershell
 codeforesight forecast-stage2 `
@@ -151,4 +180,4 @@ artifacts/stage2/
 - Test target의 약 75.7%가 0이므로 zero baseline이 전체 MAE에서는 유리합니다.
 - Stage 2는 저장소의 예방적 검토 우선순위를 정하는 신호입니다.
 - Stage 2 결과만으로 배포를 차단하지 않습니다.
-- Stage 1 결과도 확정 취약점이 아니라 검토 우선순위 신호입니다.
+- Stage 1 scanner finding도 false positive가 있을 수 있으므로 검토가 필요하지만, 정책에서 확인된 Critical/High 및 secret finding은 CI gate에 사용할 수 있습니다.

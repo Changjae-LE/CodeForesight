@@ -7,6 +7,16 @@ paths:
   repos_dir: repos
 
 stage1:
+  tools: [semgrep, osv-scanner, gitleaks, trivy]
+  output_dir: artifacts/stage1
+  semgrep_config: auto
+  gitleaks_mode: dir
+  fail_severities: [CRITICAL, HIGH]
+  fail_on_secrets: true
+  allow_missing_tools: false
+  optional_terraform_validation: false
+
+pattern_detector:
   language: null
   min_code_chars: 40
   max_code_chars: 30000
@@ -29,17 +39,3 @@ stage2:
   ema_span: 6
   classifier_c_grid: [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
   severity_alpha_grid: [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0]
-  selected_features:
-    - cvss_sum_current
-    - cve_count_current
-    - high_critical_count_current
-    - cvss_sum_lag_1
-    - cvss_sum_lag_2
-    - cvss_sum_lag_3
-    - cvss_sum_rolling_mean_3
-    - commit_count
-    - author_count
-    - files_changed
-    - code_churn
-    - repository_age_months
-  min_fix_score: null

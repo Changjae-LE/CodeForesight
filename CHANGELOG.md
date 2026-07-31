@@ -16,3 +16,11 @@
 - Updated combined reporting for Soft Hurdle output columns.
 - Preserved the original Ridge implementation as legacy modules.
 - Added Soft Hurdle integration and panel-bound tests.
+
+## 0.3.0
+
+- Integrated the uploaded standalone Stage1 multi-scanner implementation.
+- Added Semgrep, OSV-Scanner, Gitleaks, and Trivy Stage 1 scanning.
+- Preserved optional Terraform validation.
+- Moved the former CVEfixes ML Stage 1 to `pattern_detector`.
+- Added normalized findings, deterministic fingerprints, secret-safe output, and CI gate policy.
